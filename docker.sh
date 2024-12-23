@@ -34,6 +34,10 @@ EOF
 echo "Building Docker image..."
 docker build -t $IMAGE_NAME .
 
+echo "Removing old container..."
+docker stop $CONTAINER_NAME
+docker rm $CONTAINER_NAME
+
 echo "Running Docker container..."
 docker run -d \
   --name $CONTAINER_NAME \
