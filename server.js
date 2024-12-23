@@ -8,7 +8,7 @@ const app = express();
 const port = 3069;
 app.use(cors());
 
-const BASE_DIR = path.resolve('/srv/html/dl.kxtz.dev');
+const BASE_DIR = path.resolve('/srv/html/dl.kxtz.dev/files');
 
 function executeCommand(command) {
   return new Promise((resolve, reject) => {
