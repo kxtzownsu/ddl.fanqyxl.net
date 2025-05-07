@@ -13,6 +13,8 @@ if [ ! -d "$FILES_DIR" ]; then
     exit 1
 fi
 
+rm -rf node_modules # DANGEROUS, USE SCRIPT_DIR!
+
 cat <<EOF > Dockerfile
 FROM node:18-alpine
 

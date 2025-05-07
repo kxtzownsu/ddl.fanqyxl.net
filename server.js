@@ -1,5 +1,8 @@
+const { Throttle } = require('stream-throttle');
+const ipDownloadMap = new Map();
 const express = require('express');
 const fs = require('fs').promises;
+const createReadStream = require('fs').createReadStream;
 const path = require('path');
 const cors = require('cors');
 const { exec } = require('child_process');
@@ -20,6 +23,22 @@ function sanitizePath(relativePath) {
 
   return fullPath;
 }
+
+function registerDownload(ip, route, limit) {
+  const now = Date.now();
+  if (!ipDownloadMap.has(ip)) ipDownloadMap.set(ip, []);
+  const events = ipDownloadMap.get(ip);
+
+  events.push({ time: now, route });
+
+  const cutoff = now - 5 * 60 * 1000;
+  const recent = events.filter(e => e.time > cutoff);
+  ipDownloadMap.set(ip, recent);
+
+  const count = recent.filter(e => e.route === route).length;
+  return count > limit;
+}
+
 
 function executeCommand(command) {
   return new Promise((resolve, reject) => {
@@ -68,10 +87,19 @@ async function getFileMetadata(dirPath) {
           }
         }
 
+	const modified = new Date((await fs.stat(fullPath)).mtime).toLocaleString("en-US", {
+		  hour: "2-digit",
+		  minute: "2-digit",
+		  hour12: true,
+		  day: "2-digit",
+		  month: "2-digit",
+		  year: "numeric",
+	}).replace(",", "");
+
         return {
           name: entry.name,
-          modified: new Date((await fs.stat(fullPath)).mtime).toISOString(),
-          size,
+          modified,
+	  size,
           type: entry.isDirectory() ? 'folder' : 'file',
         };
       })
@@ -105,23 +133,71 @@ app.get('/api/v1/download', async (req, res) => {
   try {
     const filePath = sanitizePath(req.query.path);
     await fs.access(filePath);
-    res.download(filePath);
+
+    const ip = req.socket.remoteAddress;
+    const shouldThrottle = registerDownload(ip, 'download', 5);
+
+    if (shouldThrottle) {
+      console.log(`Throttling /api/v1/download for ${ip}`);
+      const stream = createReadStream(filePath);
+      const throttle = new Throttle({ rate: 5 * 1024 * 1024 }); // 5 Mbps
+      res.attachment(path.basename(filePath));
+      stream.pipe(throttle).pipe(res);
+    } else {
+      res.download(filePath);
+    }
   } catch (error) {
     console.error('Error downloading file:', error.message);
     res.status(404).json({ error: 'File not found' });
   }
 });
 
+
 app.get('/api/v1/raw', async (req, res) => {
   try {
     const filePath = sanitizePath(req.query.path);
-    const data = await fs.readFile(filePath);
-    res.type('text/plain').send(data);
+    await fs.access(filePath);
+
+    const ip = req.socket.remoteAddress;
+    const shouldThrottle = registerDownload(ip, 'raw', 30);
+
+    const stream = createReadStream(filePath);
+    res.type('text/plain');
+
+    if (shouldThrottle) {
+      console.log(`Throttling /api/v1/raw for ${ip}`);
+      const throttle = new Throttle({ rate: 5 * 1024 * 1024 }); // 5 Mbps
+      stream.pipe(throttle).pipe(res);
+    } else {
+      stream.pipe(res);
+    }
   } catch (error) {
     console.error('Error reading file:', error.message);
     res.status(500).json({ error: 'Error reading file' });
   }
 });
+
+
+app.get('/', async (req, res) => {
+  const now = new Date().toLocaleString('en-US', {
+      timeZone: 'UTC',
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+  });
+
+  const ip = req.socket.remoteAddress;
+  const userAgent = req.headers['user-agent'];
+
+  console.log(`[${now}] DIRECT ACCESS FROM ${ip} WITH USER AGENT ${userAgent}`);
+
+  res.redirect(301, 'https://kxtz.dev');
+});
+
 
 app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
