@@ -5,7 +5,7 @@ CONTAINER_NAME="ddl-kxtz-dev"
 IMAGE_NAME="file-server-image"
 HOST_PORT=3069
 CONTAINER_PORT=3069
-FILES_DIR="/srv/html/dl.kxtz.dev/files"
+FILES_DIR="/home/fanqyxl/Websites/File-Host"
 APP_DIR="/app"
 
 if [ ! -d "$FILES_DIR" ]; then
